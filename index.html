@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DEEP-ALI STARK Benchmark Dashboard</title>
+  <meta name="description" content="Interactive benchmark dashboard for DEEP-ALI STARK across NIST L1/L3/L5 security levels. Run on AWS C5.4xlarge 16vcpu Rayon threads" />
+
+  <!-- Tailwind (CDN build, fine for static docs) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React + Recharts UMD bundles -->
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+
+  <!-- Babel standalone, so we can write JSX inline -->
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50">
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo } = React;
+    const {
+      LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+      ResponsiveContainer, BarChart, Bar
+    } = Recharts;
+
+    // ---- Minimal inline SVG icons (replaces lucide-react) ----
+    const Icon = ({ d, className = "w-4 h-4" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+           className={className}>{d}</svg>
+    );
+    const IconDownload   = (p) => <Icon {...p} d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>} />;
+    const IconBarChart   = (p) => <Icon {...p} d={<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>} />;
+    const IconLine       = (p) => <Icon {...p} d={<><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></>} />;
+    const IconActivity   = (p) => <Icon {...p} d={<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>} />;
+    const IconClock      = (p) => <Icon {...p} d={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>} />;
+    const IconHardDrive  = (p) => <Icon {...p} d={<><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></>} />;
+    const IconZap        = (p) => <Icon {...p} d={<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>} />;
+
+    // ---- Benchmark data (identical to React version) ----
+    const DATA = {
+      "L5-SHA512-FP8-r105": {
+        label: "NIST L5 · SHA-512 · FP8 · r=105",
+        color: "#dc2626",
+        rows: [
+          ["fib_w2_d2",16,4164632,1.002334,43.235,65383.383805],
+          ["fib_w2_d2",17,4690600,1.981848,47.824,66136.242918],
+          ["fib_w2_d2",18,5201448,3.932201,52.657,66665.963413],
+          ["fib_w2_d2",19,5712424,7.995699,59.264,65571.251269],
+          ["fib_w2_d2",20,6223656,16.024403,72.145,65436.198804],
+          ["fib_w2_d2",21,6836200,32.421839,110.499,64683.313447],
+          ["fib_w2_d2",22,7456488,65.513458,243.524,64022.021571],
+          ["fib_w2_d2",23,8293864,131.238458,753.263,63918.824725],
+          ["fib_w2_d2",24,9565416,264.793754,2761.461,63359.560858],
+          ["poseidon_w16_d2",16,4164632,0.985252,43.326,66516.989839],
+          ["poseidon_w16_d2",17,4690600,1.971245,48.006,66491.981415],
+          ["poseidon_w16_d2",18,5201448,3.870108,53.028,67735.574115],
+          ["poseidon_w16_d2",19,5712424,7.704995,59.108,68045.210552],
+          ["poseidon_w16_d2",20,6223656,15.496281,71.931,67666.300001],
+          ["poseidon_w16_d2",21,6836200,31.491845,110.146,66593.494309],
+          ["poseidon_w16_d2",22,7456488,64.389623,243.557,65139.440209],
+          ["poseidon_w16_d2",23,8293864,130.696345,754.012,64183.952689],
+          ["poseidon_w16_d2",24,9565416,263.918713,2773.587,63569.634134],
+          ["regmach_w8_d2",16,4164632,0.966704,43.220,67793.247494],
+          ["regmach_w8_d2",17,4690600,2.009725,48.047,65218.882088],
+          ["regmach_w8_d2",18,5201448,3.843969,52.708,68196.180657],
+          ["regmach_w8_d2",19,5712424,7.742042,59.047,67719.603680],
+          ["regmach_w8_d2",20,6223656,15.458965,72.069,67829.636315],
+          ["regmach_w8_d2",21,6836200,31.504546,110.408,66566.647765],
+          ["regmach_w8_d2",22,7456488,64.164045,243.412,65368.447800],
+          ["regmach_w8_d2",23,8293864,130.411001,753.679,64324.389493],
+          ["regmach_w8_d2",24,9565416,264.913556,2773.718,63330.907951],
+        ]
+      },
+      "L3-SHA512-FP6-r79": {
+        label: "NIST L3 · SHA-512 · FP6 · r=79",
+        color: "#ea580c",
+        rows: [
+          ["fib_w2_d2",16,3093224,0.716669,29.305,91445.341979],
+          ["fib_w2_d2",17,3486440,1.411629,32.746,92851.605707],
+          ["fib_w2_d2",18,3868264,2.861777,36.001,91601.837749],
+          ["fib_w2_d2",19,4247656,5.736305,40.266,91398.215471],
+          ["fib_w2_d2",20,4622184,11.568478,47.513,90640.793387],
+          ["fib_w2_d2",21,5062824,23.571391,67.662,88970.224820],
+          ["fib_w2_d2",22,5489064,47.702940,135.455,87925.483022],
+          ["fib_w2_d2",23,6038184,95.893986,392.480,87477.936718],
+          ["fib_w2_d2",24,6833064,192.112708,1404.408,87330.068583],
+          ["poseidon_w16_d2",16,3093224,0.693446,29.481,94507.698294],
+          ["poseidon_w16_d2",17,3486440,1.393055,32.764,94089.579969],
+          ["poseidon_w16_d2",18,3868264,2.762772,36.083,94884.417278],
+          ["poseidon_w16_d2",19,4247656,5.597745,40.189,93660.577285],
+          ["poseidon_w16_d2",20,4622184,11.256906,47.755,93149.577141],
+          ["poseidon_w16_d2",21,5062824,23.411183,67.728,89579.070619],
+          ["poseidon_w16_d2",22,5489064,47.545479,135.374,88216.673780],
+          ["poseidon_w16_d2",23,6038184,95.832933,392.855,87533.666916],
+          ["poseidon_w16_d2",24,6833064,192.445402,1404.274,87179.095010],
+          ["regmach_w8_d2",16,3093224,0.723145,29.566,90626.372145],
+          ["regmach_w8_d2",17,3486440,1.393359,32.797,94069.068258],
+          ["regmach_w8_d2",18,3868264,2.849649,36.072,91991.686674],
+          ["regmach_w8_d2",19,4247656,5.520502,40.176,94971.079459],
+          ["regmach_w8_d2",20,4622184,11.389558,47.586,92064.676169],
+          ["regmach_w8_d2",21,5062824,23.340763,67.654,89849.332414],
+          ["regmach_w8_d2",22,5489064,47.616969,135.588,88084.228443],
+          ["regmach_w8_d2",23,6038184,95.801244,392.461,87562.620708],
+          ["regmach_w8_d2",24,6833064,192.575363,1404.157,87120.261574],
+        ]
+      },
+      "L3-SHA384-FP6-r79": {
+        label: "NIST L3 · SHA-384 · FP6 · r=79",
+        color: "#ca8a04",
+        rows: [
+          ["fib_w2_d2",16,2356024,0.718395,19.475,91225.565401],
+          ["fib_w2_d2",17,2653160,1.394841,21.598,93969.131109],
+          ["fib_w2_d2",18,2941448,2.801113,23.483,93585.640974],
+          ["fib_w2_d2",19,3229832,5.595930,26.370,93690.943004],
+          ["fib_w2_d2",20,3518408,11.428299,32.494,91752.583812],
+          ["fib_w2_d2",21,3864248,23.196369,51.200,90408.631335],
+          ["fib_w2_d2",22,4214648,46.902257,117.377,89426.484808],
+          ["fib_w2_d2",23,4687928,95.013206,371.851,88288.863671],
+          ["fib_w2_d2",24,5406968,189.238957,1378.299,88656.248487],
+          ["poseidon_w16_d2",16,2356024,0.682456,19.561,96029.567307],
+          ["poseidon_w16_d2",17,2653160,1.438300,21.619,91129.804754],
+          ["poseidon_w16_d2",18,2941448,2.776935,23.562,94400.464279],
+          ["poseidon_w16_d2",19,3229832,5.512854,26.468,95102.832477],
+          ["poseidon_w16_d2",20,3518408,11.113731,32.503,94349.590304],
+          ["poseidon_w16_d2",21,3864248,22.891395,51.200,91613.115337],
+          ["poseidon_w16_d2",22,4214648,46.927548,117.517,89378.289971],
+          ["poseidon_w16_d2",23,4687928,94.451685,371.736,88813.746590],
+          ["poseidon_w16_d2",24,5406968,190.477490,1378.217,88079.783287],
+          ["regmach_w8_d2",16,2356024,0.693136,19.721,94550.054963],
+          ["regmach_w8_d2",17,2653160,1.374574,21.547,95354.658759],
+          ["regmach_w8_d2",18,2941448,2.797933,23.614,93692.034925],
+          ["regmach_w8_d2",19,3229832,5.547321,26.460,94511.933040],
+          ["regmach_w8_d2",20,3518408,11.051101,32.540,94884.300165],
+          ["regmach_w8_d2",21,3864248,22.462036,51.103,93364.289091],
+          ["regmach_w8_d2",22,4214648,46.171643,117.385,90841.557650],
+          ["regmach_w8_d2",23,4687928,94.508171,371.804,88760.664310],
+          ["regmach_w8_d2",24,5406968,189.938490,1378.282,88329.732650],
+        ]
+      },
+      "L1-SHA3512-FP6-r54": {
+        label: "NIST L1 · SHA3-512 · FP6 · r=54",
+        color: "#0891b2",
+        rows: [
+          ["fib_w2_d2",16,2115024,0.720536,20.061,90954.480967],
+          ["fib_w2_d2",17,2383840,1.432676,22.475,91487.524532],
+          ["fib_w2_d2",18,2644864,2.852943,24.630,91885.457122],
+          ["fib_w2_d2",19,2904256,5.721248,27.486,91638.740319],
+          ["fib_w2_d2",20,3160384,11.578244,32.540,90564.337446],
+          ["fib_w2_d2",21,3461824,23.520759,46.254,89161.750319],
+          ["fib_w2_d2",22,3753664,47.201172,92.658,88860.167212],
+          ["fib_w2_d2",23,4129984,95.861861,268.623,87507.252030],
+          ["fib_w2_d2",24,4675264,193.003435,959.978,86927.033173],
+          ["poseidon_w16_d2",16,2115024,0.700772,20.180,93519.704908],
+          ["poseidon_w16_d2",17,2383840,1.386146,22.434,94558.578237],
+          ["poseidon_w16_d2",18,2644864,2.821810,24.741,92899.229543],
+          ["poseidon_w16_d2",19,2904256,5.555536,27.526,94372.164903],
+          ["poseidon_w16_d2",20,3160384,11.269770,32.503,93043.243526],
+          ["poseidon_w16_d2",21,3461824,23.409472,46.362,89585.617190],
+          ["poseidon_w16_d2",22,3753664,47.454075,92.738,88386.592258],
+          ["poseidon_w16_d2",23,4129984,96.240875,268.547,87162.631946],
+          ["poseidon_w16_d2",24,4675264,193.108369,959.748,86879.797482],
+          ["regmach_w8_d2",16,2115024,0.702283,20.273,93318.475605],
+          ["regmach_w8_d2",17,2383840,1.411270,22.463,92875.226957],
+          ["regmach_w8_d2",18,2644864,2.814290,24.761,93147.467664],
+          ["regmach_w8_d2",19,2904256,5.590744,27.571,93777.860257],
+          ["regmach_w8_d2",20,3160384,11.362959,32.570,92280.188873],
+          ["regmach_w8_d2",21,3461824,23.264214,46.354,90144.975377],
+          ["regmach_w8_d2",22,3753664,47.803345,92.652,87740.806206],
+          ["regmach_w8_d2",23,4129984,95.920500,268.536,87453.755672],
+          ["regmach_w8_d2",24,4675264,193.124089,959.862,86872.725500],
+        ]
+      },
+      "L1-SHA3384-FP6-r54": {
+        label: "NIST L1 · SHA3-384 · FP6 · r=54",
+        color: "#2563eb",
+        rows: [
+          ["fib_w2_d2",16,1611024,0.710427,13.348,92248.724492],
+          ["fib_w2_d2",17,1814160,1.397996,14.739,93757.075754],
+          ["fib_w2_d2",18,2011248,2.812523,16.108,93206.001424],
+          ["fib_w2_d2",19,2208432,5.651839,18.057,92764.143459],
+          ["fib_w2_d2",20,2405808,11.404253,22.350,91946.047114],
+          ["fib_w2_d2",21,2642448,23.333272,34.962,89878.178889],
+          ["fib_w2_d2",22,2882448,46.855442,80.184,89515.834511],
+          ["fib_w2_d2",23,3206928,94.531114,254.162,88739.120934],
+          ["fib_w2_d2",24,3700368,189.746367,941.909,88419.168566],
+          ["poseidon_w16_d2",16,1611024,0.733329,13.464,89367.768393],
+          ["poseidon_w16_d2",17,1814160,1.384000,14.870,94705.233379],
+          ["poseidon_w16_d2",18,2011248,2.791595,16.169,93904.740090],
+          ["poseidon_w16_d2",19,2208432,5.516918,18.135,95032.776620],
+          ["poseidon_w16_d2",20,2405808,11.362999,22.286,92279.864491],
+          ["poseidon_w16_d2",21,2642448,23.232950,34.970,90266.281516],
+          ["poseidon_w16_d2",22,2882448,47.062413,80.440,89122.162368],
+          ["poseidon_w16_d2",23,3206928,95.160922,254.418,88151.815301],
+          ["poseidon_w16_d2",24,3700368,189.976115,942.242,88312.238592],
+          ["regmach_w8_d2",16,1611024,0.691045,13.427,94836.075411],
+          ["regmach_w8_d2",17,1814160,1.367127,14.822,95874.042527],
+          ["regmach_w8_d2",18,2011248,2.745740,16.167,95473.004492],
+          ["regmach_w8_d2",19,2208432,5.551167,18.142,94446.441752],
+          ["regmach_w8_d2",20,2405808,11.313973,22.376,92679.736632],
+          ["regmach_w8_d2",21,2642448,23.250225,35.053,90199.213033],
+          ["regmach_w8_d2",22,2882448,47.088742,80.330,89072.330737],
+          ["regmach_w8_d2",23,3206928,95.307571,254.392,88016.177009],
+          ["regmach_w8_d2",24,3700368,190.489067,942.186,88074.429814],
+        ]
+      },
+      "L1-SHA256-FP6-r54": {
+        label: "NIST L1 · SHA-256 · FP6 · r=54",
+        color: "#16a34a",
+        rows: [
+          ["fib_w2_d2",16,1107024,0.688591,10.231,95173.993369],
+          ["fib_w2_d2",17,1244480,1.359440,11.098,96416.191932],
+          ["fib_w2_d2",18,1377632,2.769544,12.176,94652.392330],
+          ["fib_w2_d2",19,1512608,5.531966,13.825,94774.259227],
+          ["fib_w2_d2",20,1651232,11.193027,17.576,93681.183600],
+          ["fib_w2_d2",21,1823072,22.637858,29.868,92639.152311],
+          ["fib_w2_d2",22,2011232,46.119296,74.871,90944.666436],
+          ["fib_w2_d2",23,2283872,93.261442,248.303,89947.226308],
+          ["fib_w2_d2",24,2725472,187.636751,934.218,89413.272932],
+          ["poseidon_w16_d2",16,1107024,0.696266,10.245,94125.010308],
+          ["poseidon_w16_d2",17,1244480,1.351057,11.222,97014.445500],
+          ["poseidon_w16_d2",18,1377632,2.750174,12.206,95319.054683],
+          ["poseidon_w16_d2",19,1512608,5.395954,13.772,97163.171226],
+          ["poseidon_w16_d2",20,1651232,11.106830,17.639,94408.219701],
+          ["poseidon_w16_d2",21,1823072,22.682471,29.865,92456.944582],
+          ["poseidon_w16_d2",22,2011232,46.003551,74.853,91173.483380],
+          ["poseidon_w16_d2",23,2283872,92.866314,248.185,90329.933844],
+          ["poseidon_w16_d2",24,2725472,187.091993,933.667,89673.618594],
+          ["regmach_w8_d2",16,1107024,0.666730,10.195,98294.603331],
+          ["regmach_w8_d2",17,1244480,1.329752,11.246,98568.733959],
+          ["regmach_w8_d2",18,1377632,2.675116,12.208,97993.505740],
+          ["regmach_w8_d2",19,1512608,5.394395,13.795,97191.251686],
+          ["regmach_w8_d2",20,1651232,10.862552,17.660,96531.274466],
+          ["regmach_w8_d2",21,1823072,22.487417,29.938,93258.910518],
+          ["regmach_w8_d2",22,2011232,46.029752,74.836,91121.585561],
+          ["regmach_w8_d2",23,2283872,92.914832,248.172,90282.765330],
+          ["regmach_w8_d2",24,2725472,187.863258,933.709,89305.467158],
+        ]
+      },
+    };
+
+    const CONFIG_KEYS = Object.keys(DATA);
+    const AIR_TYPES = ["fib_w2_d2", "poseidon_w16_d2", "regmach_w8_d2"];
+    const AIR_LABEL = {
+      "fib_w2_d2": "Fibonacci (w=2)",
+      "poseidon_w16_d2": "Poseidon (w=16)",
+      "regmach_w8_d2": "RegMachine (w=8)",
+    };
+
+    const METRICS = [
+      { key: "proof_kb",   label: "Proof size (KB)",     icon: IconHardDrive, unit: "KB", log: false },
+      { key: "prove_s",    label: "Prove time (s)",      icon: IconClock,     unit: "s",  log: true  },
+      { key: "verify_ms",  label: "Verify time (ms)",    icon: IconZap,       unit: "ms", log: true  },
+      { key: "throughput", label: "Throughput (elems/s)",icon: IconActivity,  unit: "/s", log: false },
+    ];
+
+    function rowsAsObjects(rows) {
+      return rows.map(([air, k, pb, ps, vm, tp]) => ({
+        air_type: air, k,
+        proof_bytes: pb,
+        proof_kb: +(pb / 1024).toFixed(1),
+        prove_s: ps,
+        verify_ms: vm,
+        throughput: tp,
+      }));
+    }
+
+    function Dashboard() {
+      const [mode, setMode] = useState("single");
+      const [activeConfig, setActiveConfig] = useState(CONFIG_KEYS[0]);
+      const [activeAir, setActiveAir] = useState("poseidon_w16_d2");
+      const [activeMetric, setActiveMetric] = useState("prove_s");
+      const [logY, setLogY] = useState(true);
+      const [selectedConfigs, setSelectedConfigs] = useState(new Set(CONFIG_KEYS));
+
+      const singleData = useMemo(() => {
+        const rows = rowsAsObjects(DATA[activeConfig].rows);
+        const byK = {};
+        rows.forEach(r => {
+          byK[r.k] = byK[r.k] || { k: r.k };
+          byK[r.k][r.air_type] = r[activeMetric];
+        });
+        return Object.values(byK).sort((a, b) => a.k - b.k);
+      }, [activeConfig, activeMetric]);
+
+      const compareData = useMemo(() => {
+        const byK = {};
+        CONFIG_KEYS.forEach(cfg => {
+          if (!selectedConfigs.has(cfg)) return;
+          rowsAsObjects(DATA[cfg].rows)
+            .filter(r => r.air_type === activeAir)
+            .forEach(r => {
+              byK[r.k] = byK[r.k] || { k: r.k };
+              byK[r.k][cfg] = r[activeMetric];
+            });
+        });
+        return Object.values(byK).sort((a, b) => a.k - b.k);
+      }, [activeAir, activeMetric, selectedConfigs]);
+
+      const metricMeta = METRICS.find(m => m.key === activeMetric);
+      const AIR_COLORS = {
+        "fib_w2_d2": "#2563eb",
+        "poseidon_w16_d2": "#dc2626",
+        "regmach_w8_d2": "#16a34a",
+      };
+
+      const formatVal = (v) => {
+        if (v === null || v === undefined) return "-";
+        if (activeMetric === "throughput") return (v / 1000).toFixed(1) + "k";
+        if (activeMetric === "proof_kb")   return v.toFixed(1);
+        if (activeMetric === "verify_ms")  return v.toFixed(1);
+        if (activeMetric === "prove_s")    return v < 1 ? v.toFixed(3) : v.toFixed(2);
+        return v;
+      };
+
+      const downloadCSV = () => {
+        const data = mode === "single" ? singleData : compareData;
+        if (!data.length) return;
+        const keys = Object.keys(data[0]);
+        const csv = [keys.join(","), ...data.map(r => keys.map(k => r[k] ?? "").join(","))].join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `benchmark_${mode}_${activeMetric}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="mb-6">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 flex items-center gap-2">
+                <IconBarChart className="w-7 h-7 text-indigo-600" />
+                DEEP-ALI STARK Benchmark Dashboard
+              </h1>
+              <p className="text-sm text-slate-600 mt-1">
+                Interactive results across NIST L1/L3/L5 security levels · binary-tree FRI · multi-AIR
+              </p>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4">
+              <div className="flex flex-wrap gap-2 mb-4">
+                <button onClick={() => setMode("single")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition ${mode === "single" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                  <IconLine className="inline w-4 h-4 mr-1" />
+                  AIR comparison (fix config)
+                </button>
+                <button onClick={() => setMode("compare")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition ${mode === "compare" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                  <IconBarChart className="inline w-4 h-4 mr-1" />
+                  Config comparison (fix AIR)
+                </button>
+                <button onClick={downloadCSV}
+                  className="ml-auto px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">
+                  <IconDownload className="inline w-4 h-4 mr-1" />
+                  Export CSV
+                </button>
+              </div>
+
+              {mode === "single" ? (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                    Configuration
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {CONFIG_KEYS.map(cfg => (
+                      <button key={cfg} onClick={() => setActiveConfig(cfg)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium border transition ${activeConfig === cfg ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}>
+                        {DATA[cfg].label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">AIR type</label>
+                    <div className="flex flex-wrap gap-2">
+                      {AIR_TYPES.map(a => (
+                        <button key={a} onClick={() => setActiveAir(a)}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium border transition ${activeAir === a ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}>
+                          {AIR_LABEL[a]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                      Configurations to compare
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {CONFIG_KEYS.map(cfg => {
+                        const on = selectedConfigs.has(cfg);
+                        return (
+                          <button key={cfg}
+                            onClick={() => {
+                              const next = new Set(selectedConfigs);
+                              if (on) next.delete(cfg); else next.add(cfg);
+                              setSelectedConfigs(next);
+                            }}
+                            className="px-3 py-1.5 rounded-md text-xs font-medium border transition"
+                            style={{
+                              borderColor: on ? DATA[cfg].color : "#e2e8f0",
+                              backgroundColor: on ? DATA[cfg].color + "15" : "white",
+                              color: on ? DATA[cfg].color : "#475569",
+                            }}>
+                            {DATA[cfg].label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Metric</label>
+              <div className="flex flex-wrap gap-2 items-center">
+                {METRICS.map(m => {
+                  const IconC = m.icon;
+                  return (
+                    <button key={m.key}
+                      onClick={() => { setActiveMetric(m.key); setLogY(m.log); }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium border transition flex items-center gap-1.5 ${activeMetric === m.key ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}>
+                      <IconC className="w-3.5 h-3.5" />
+                      {m.label}
+                    </button>
+                  );
+                })}
+                <label className="ml-auto flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={logY} onChange={e => setLogY(e.target.checked)} className="rounded" />
+                  Log Y-axis
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4">
+              <h2 className="text-sm font-semibold text-slate-800 mb-3">
+                {metricMeta.label} vs. trace size 2<sup>k</sup>
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  {mode === "single" ? DATA[activeConfig].label : `AIR = ${AIR_LABEL[activeAir]}`}
+                </span>
+              </h2>
+              <div className="w-full h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={mode === "single" ? singleData : compareData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="k"
+                      label={{ value: "log2(trace rows) k", position: "insideBottom", offset: -5, fontSize: 12 }}
+                      tick={{ fontSize: 12 }} />
+                    <YAxis
+                      scale={logY ? "log" : "linear"}
+                      domain={logY ? ["auto", "auto"] : [0, "auto"]}
+                      allowDataOverflow
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={formatVal}
+                      label={{ value: metricMeta.unit, angle: -90, position: "insideLeft", fontSize: 12 }} />
+                    <Tooltip
+                      formatter={(v, name) => [formatVal(v) + " " + metricMeta.unit, mode === "single" ? AIR_LABEL[name] : (DATA[name] && DATA[name].label) || name]}
+                      labelFormatter={(l) => `k = ${l} (trace = 2^${l})`}
+                      contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+                    <Legend
+                      formatter={(v) => mode === "single" ? AIR_LABEL[v] : (DATA[v] && DATA[v].label) || v}
+                      wrapperStyle={{ fontSize: 12 }} />
+                    {mode === "single"
+                      ? AIR_TYPES.map(a => (
+                          <Line key={a} type="monotone" dataKey={a} stroke={AIR_COLORS[a]} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
+                        ))
+                      : CONFIG_KEYS.filter(c => selectedConfigs.has(c)).map(cfg => (
+                          <Line key={cfg} type="monotone" dataKey={cfg} stroke={DATA[cfg].color} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
+                        ))
+                    }
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4">
+              <h2 className="text-sm font-semibold text-slate-800 mb-3">
+                Proof size at k=24 across configurations (KB)
+                <span className="ml-2 text-xs font-normal text-slate-500">AIR = Poseidon (w=16)</span>
+              </h2>
+              <div className="w-full h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={CONFIG_KEYS.map(cfg => {
+                      const row = DATA[cfg].rows.find(r => r[0] === "poseidon_w16_d2" && r[1] === 24);
+                      return { name: DATA[cfg].label.replace(/NIST /, ""), size: +(row[2] / 1024).toFixed(1), color: DATA[cfg].color };
+                    })}
+                    margin={{ top: 10, right: 20, left: 0, bottom: 80 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" interval={0} />
+                    <YAxis tick={{ fontSize: 12 }} label={{ value: "KB", angle: -90, position: "insideLeft", fontSize: 12 }} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6 }} formatter={(v) => [v + " KB", "Proof size"]} />
+                    <Bar dataKey="size" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+              <h2 className="text-sm font-semibold text-slate-800 mb-3">Headline numbers at k=24</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-600">
+                      <th className="text-left py-2 px-2 font-semibold">Configuration</th>
+                      <th className="text-right py-2 px-2 font-semibold">Proof (KB)</th>
+                      <th className="text-right py-2 px-2 font-semibold">Prove (s)</th>
+                      <th className="text-right py-2 px-2 font-semibold">Verify (ms)</th>
+                      <th className="text-right py-2 px-2 font-semibold">Throughput (k/s)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {CONFIG_KEYS.map(cfg => {
+                      const row = DATA[cfg].rows.find(r => r[0] === "poseidon_w16_d2" && r[1] === 24);
+                      return (
+                        <tr key={cfg} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="py-2 px-2">
+                            <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ backgroundColor: DATA[cfg].color }}></span>
+                            {DATA[cfg].label}
+                          </td>
+                          <td className="text-right py-2 px-2 font-mono">{(row[2] / 1024).toFixed(1)}</td>
+                          <td className="text-right py-2 px-2 font-mono">{row[3].toFixed(2)}</td>
+                          <td className="text-right py-2 px-2 font-mono">{row[4].toFixed(1)}</td>
+                          <td className="text-right py-2 px-2 font-mono">{(row[5] / 1000).toFixed(1)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                Poseidon (w=16) AIR · k=24 (2²⁴ trace rows) · schedule tail = 256
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-400 mt-6 text-center">
+              Data from <code>Final-NIST-*-binaryarity-*-benchmarkdata.csv</code> · hover points for exact values · toggle log/linear Y-axis above
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard />);
+  </script>
+</body>
+</html>
